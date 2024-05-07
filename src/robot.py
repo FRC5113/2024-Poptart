@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 import wpilib
-from wpilib import DoubleSolenoid, PneumaticsModuleType
+from wpimath.geometry import Translation2d
+from wpimath.kinematics import DifferentialDriveKinematics, MecanumDriveKinematics
 from magicbot import MagicRobot
 
-from components.drivetrain import Drivetrain, OctoMode
+from components.drivetrain import Drivetrain, OctoMode, OctoModule
 import util
-from util import WPI_TalonFX
 
 
 class MyRobot(MagicRobot):
@@ -17,23 +17,18 @@ class MyRobot(MagicRobot):
 
     def createObjects(self):
         """Initialize all wpilib motors & sensors"""
-        self.drivetrain_front_left_motor = util.WPI_TalonFX(0)
-        self.drivetrain_front_right_motor = util.WPI_TalonFX(0)
-        self.drivetrain_back_left_motor = util.WPI_TalonFX(0)
-        self.drivetrain_back_right_motor = util.WPI_TalonFX(0)
 
         # UPDATE WITH CORRECT IDs!!!!!!
-        self.drivetrain_front_left_solenoid = DoubleSolenoid(
-            PneumaticsModuleType.REVPH, 0, 1
-        )
-        self.drivetrain_front_right_solenoid = DoubleSolenoid(
-            PneumaticsModuleType.REVPH, 2, 3
-        )
-        self.drivetrain_back_left_solenoid = DoubleSolenoid(
-            PneumaticsModuleType.REVPH, 4, 5
-        )
-        self.drivetrain_back_right_solenoid = DoubleSolenoid(
-            PneumaticsModuleType.REVPH, 6, 7
+        self.drivetrain_front_left_module = OctoModule(0, 0, 1)
+        self.drivetrain_front_right_module = OctoModule(0, 2, 3, isInverted=True)
+        self.drivetrain_back_left_module = OctoModule(0, 4, 5)
+        self.drivetrain_back_right_module = OctoModule(0, 6, 7, isInverted=True)
+        self.drivetrain_differential_kinematics = DifferentialDriveKinematics(0)
+        self.drivetrain_mecanum_kinematics = MecanumDriveKinematics(
+            Translation2d(0, 0),
+            Translation2d(0, 0),
+            Translation2d(0, 0),
+            Translation2d(0, 0),
         )
 
         self.xbox = wpilib.XboxController(0)

@@ -1,11 +1,12 @@
 from enum import Enum
 
-import wpilib
-from wpilib import DoubleSolenoid
-from wpilib.interfaces import MotorController
-from wpilib.drive import DifferentialDrive, MecanumDrive
-from magicbot import will_reset_to, feedback
-from phoenix6.signals import NeutralModeValue
+from wpilib import DoubleSolenoid, PneumaticsModuleType
+from wpimath import kinematics
+from magicbot import feedback, will_reset_to
+from phoenix6.hardware.talon_fx import TalonFX
+from phoenix6.configs.talon_fx_configs import TalonFXConfiguration
+from phoenix6.controls.duty_cycle_out import DutyCycleOut
+from phoenix6.signals import InvertedValue, NeutralModeValue
 
 
 class OctoMode(Enum):
@@ -14,23 +15,82 @@ class OctoMode(Enum):
     MECANUM_DRIVE = 2
 
 
+class OctoModule:
+    def __init__(
+        self,
+        motor_id: int,
+        solenoid_forward_channel: int,
+        solenoid_reverse_channel: int,
+        isInverted: bool = False,
+    ):
+        self.motor = TalonFX(motor_id)
+        config = TalonFXConfiguration()
+        config.motor_output.neutral_mode = NeutralModeValue.COAST
+        if isInverted:
+            config.motor_output.inverted = InvertedValue.CLOCKWISE_POSITIVE
+        else:
+            config.motor_output.inverted = InvertedValue.COUNTER_CLOCKWISE_POSITIVE
+        self.motor.configurator.apply(config)
+        self.motor_speed = 0
+        self.duty_cycle_out = DutyCycleOut(0, enable_foc=False)
+        self.solenoid = DoubleSolenoid(
+            PneumaticsModuleType.REVPH,
+            solenoid_forward_channel,
+            solenoid_reverse_channel,
+        )
+        self.mode = OctoMode.DISABLED
+        # consider adding a buffer?
+
+    def get_mode(self) -> OctoMode:
+        return self.mode
+
+    def get_solenoid_state(self) -> DoubleSolenoid.Value:
+        return self.solenoid.get()
+
+    def get_motor_speed(self) -> float:
+        return self.motor_speed
+
+    def get_duty_cycle(self) -> float:
+        return self.duty_cycle_out.output
+
+    def set_mode(self, mode: OctoMode) -> None:
+        self.mode = mode
+
+    def set_solenoid_state(self, state: DoubleSolenoid.Value) -> None:
+        self.solenoid.set(state)
+
+    def set_motor_speed(self, speed: float) -> None:
+        self.motor_speed = speed
+
+    def update(self) -> None:
+        """Should be called every loop"""
+        self.duty_cycle_out.output = self.motor_speed
+        self.motor.set_control(self.duty_cycle_out)
+        self.motor_speed = 0
+
+        if (
+            self.get_solenoid_state() != DoubleSolenoid.Value.kForward
+            and self.get_mode() == OctoMode.DIFFERENTIAL_DRIVE
+        ):
+            self.set_solenoid_state(DoubleSolenoid.Value.kForward)
+        if (
+            self.get_solenoid_state() != DoubleSolenoid.Value.kReverse
+            and self.get_mode() == OctoMode.MECANUM_DRIVE
+        ):
+            self.set_solenoid_state(DoubleSolenoid.Value.kReverse)
+        # try experimenting with using kOff to save power
+
+
 class Drivetrain:
     # annotate motor and configuration instances
-    front_left_motor: MotorController
-    front_right_motor: MotorController
-    back_left_motor: MotorController
-    back_right_motor: MotorController
+    front_left_module: OctoModule
+    front_right_module: OctoModule
+    back_left_module: OctoModule
+    back_right_module: OctoModule
+    differential_kinematics: kinematics.DifferentialDriveKinematics
+    mecanum_kinematics: kinematics.MecanumDriveKinematics
 
-    front_left_solenoid: DoubleSolenoid
-    front_right_solenoid: DoubleSolenoid
-    back_left_solenoid: DoubleSolenoid
-    back_right_solenoid: DoubleSolenoid
-
-    mode: OctoMode = OctoMode.MECANUM_DRIVE
-
-    # used to add a delay when switching states
-    buffer: int = 0
-    delay_seconds: float = 1
+    mode: OctoMode = OctoMode.DISABLED
 
     # values will reset to 0 after every time control loop runs
     x_speed: float = will_reset_to(0)
@@ -38,72 +98,21 @@ class Drivetrain:
     z_rotation: float = will_reset_to(0)
 
     def setup(self):
-        self.front_left_motor.setIdleMode(NeutralModeValue.COAST)
-        self.front_right_motor.setIdleMode(NeutralModeValue.COAST)
-        self.back_left_motor.setIdleMode(NeutralModeValue.COAST)
-        self.back_right_motor.setIdleMode(NeutralModeValue.COAST)
-        self.left_motor_controller_group = wpilib.MotorControllerGroup(
-            self.front_left_motor, self.back_left_motor
-        )
-        self.right_motor_controller_group = wpilib.MotorControllerGroup(
-            self.front_right_motor, self.back_right_motor
-        )
-        self.right_motor_controller_group.setInverted(True)
-        self.differential_drive = DifferentialDrive(
-            self.left_motor_controller_group, self.right_motor_controller_group
-        )
-        """ might need to invert right motors -- 
-        not sure if inverting the group does this"""
-        self.mecanum_drive = MecanumDrive(
-            self.front_left_motor,
-            self.back_left_motor,
-            self.front_right_motor,
-            self.back_right_motor,
-        )
-        idle_mode = NeutralModeValue.COAST
-        self.front_left_motor.setIdleMode(idle_mode)
-        self.front_right_motor.setIdleMode(idle_mode)
-        self.back_left_motor.setIdleMode(idle_mode)
-        self.back_right_motor.setIdleMode(idle_mode)
-        self.differential_drive.setExpiration(0.1)
-        self.mecanum_drive.setExpiration(0.1)
-
-        self.solenoids = [
-            self.front_left_solenoid,
-            self.front_right_solenoid,
-            self.back_left_solenoid,
-            self.back_right_solenoid,
+        self.modules = [
+            self.front_left_module,
+            self.front_right_module,
+            self.back_left_module,
+            self.back_right_module,
         ]
-
-    def on_enable(self):
-        """Called when robot enters autonomous or teleoperated mode"""
-        self.differential_drive.setSafetyEnabled(True)
-        self.mecanum_drive.setSafetyEnabled(True)
+        self.set_mode(OctoMode.MECANUM_DRIVE)
 
     def get_mode(self) -> OctoMode:
         return self.mode
 
-    def get_expected_solenoid_value(self) -> DoubleSolenoid.Value:
-        # might be backwards
-        if self.get_mode() == OctoMode.DIFFERENTIAL_DRIVE:
-            return DoubleSolenoid.Value.kForward
-        if self.get_mode() == OctoMode.MECANUM_DRIVE:
-            return DoubleSolenoid.Value.kReverse
-        return DoubleSolenoid.Value.kOff
-
-    def is_in_correct_mode(self) -> bool:
-        expected = self.get_expected_solenoid_value()
-        for solenoid in self.solenoids:
-            if solenoid.get() != expected:
-                return False
-        return True
-
     def set_mode(self, mode: OctoMode):
         self.mode = mode
-
-    def set_solenoids(self, value: DoubleSolenoid.Value):
-        for solenoid in self.solenoids:
-            solenoid.set(value)
+        for module in self.modules:
+            module.set_mode(self.mode)
 
     def arcade_drive(self, x_speed: float, z_rotation: float):
         assert -1.0 < x_speed < 1.0, f"Improper x_speed: {x_speed}"
@@ -125,21 +134,42 @@ class Drivetrain:
         self.z_rotation = z_rotation
 
     def execute(self):
-        if not self.is_in_correct_mode():
-            expected = self.get_expected_solenoid_value()
-            self.set_solenoids(expected)
-            self.buffer = int(self.delay_seconds * 50)
-        if self.buffer > 0:
-            self.buffer -= 1
-            return
+        for module in self.modules:
+            module.update()
 
+        chassis_speeds = kinematics.ChassisSpeeds(
+            self.x_speed, self.y_speed, self.z_rotation
+        )
+        # technically the wheel speeds should be scaled to convert from m/s to output % but whatever
         if self.get_mode() == OctoMode.MECANUM_DRIVE:
-            self.mecanum_drive.driveCartesian(
-                self.x_speed, self.y_speed, self.z_rotation
-            )
+            wheel_speeds = self.mecanum_kinematics.toWheelSpeeds(chassis_speeds)
+            self.front_left_module.set_motor_speed(wheel_speeds.frontLeft)
+            self.front_right_module.set_motor_speed(wheel_speeds.frontRight)
+            self.back_left_module.set_motor_speed(wheel_speeds.rearLeft)
+            self.back_right_module.set_motor_speed(wheel_speeds.rearRight)
         if self.get_mode() == OctoMode.DIFFERENTIAL_DRIVE:
-            self.differential_drive.arcadeDrive(self.x_speed, self.z_rotation)
+            wheel_speeds = self.differential_kinematics.toWheelSpeeds(chassis_speeds)
+            self.front_left_module.set_motor_speed(wheel_speeds.left)
+            self.front_right_module.set_motor_speed(wheel_speeds.right)
+            self.back_left_module.set_motor_speed(wheel_speeds.left)
+            self.back_right_module.set_motor_speed(wheel_speeds.right)
 
     @feedback
     def get_nt_mode(self) -> int:
         return self.get_mode().value
+
+    @feedback
+    def get_fl_speed(self) -> float:
+        return self.front_left_module.get_motor_speed()
+
+    @feedback
+    def get_fr_speed(self) -> float:
+        return self.front_right_module.get_motor_speed()
+
+    @feedback
+    def get_bl_speed(self) -> float:
+        return self.back_left_module.get_motor_speed()
+
+    @feedback
+    def get_br_speed(self) -> float:
+        return self.back_right_module.get_motor_speed()
