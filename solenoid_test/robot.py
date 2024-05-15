@@ -1,10 +1,11 @@
 import wpilib
-from wpilib import DoubleSolenoid, PneumaticsModuleType
+from wpilib import DoubleSolenoid, PneumaticsModuleType, Compressor
 
 
 class MyRobot(wpilib.TimedRobot):
     def robotInit(self):
-        self.solenoid = DoubleSolenoid(PneumaticsModuleType.REVPH, 0, 0)
+        self.compressor = Compressor(PneumaticsModuleType.REVPH)
+        self.solenoid = DoubleSolenoid(PneumaticsModuleType.REVPH, 0, 1)
         self.xbox = wpilib.XboxController(0)
 
     def teleopPeriodic(self):

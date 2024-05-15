@@ -19,10 +19,10 @@ class MyRobot(MagicRobot):
         """Initialize all wpilib motors & sensors"""
 
         # UPDATE WITH CORRECT IDs!!!!!!
-        self.drivetrain_front_left_module = OctoModule(0, 0, 1)
-        self.drivetrain_front_right_module = OctoModule(0, 2, 3, isInverted=True)
-        self.drivetrain_back_left_module = OctoModule(0, 4, 5)
-        self.drivetrain_back_right_module = OctoModule(0, 6, 7, isInverted=True)
+        self.drivetrain_front_left_module = OctoModule(14, 7, 8)
+        self.drivetrain_front_right_module = OctoModule(16, 1, 14, isInverted=True)
+        self.drivetrain_back_left_module = OctoModule(15, 6, 9)
+        self.drivetrain_back_right_module = OctoModule(17, 0, 15, isInverted=True)
         self.drivetrain_differential_kinematics = DifferentialDriveKinematics(0)
         self.drivetrain_mecanum_kinematics = MecanumDriveKinematics(
             Translation2d(0, 0),
