@@ -23,12 +23,12 @@ class MyRobot(MagicRobot):
         self.drivetrain_front_right_module = OctoModule(16, 1, 14, isInverted=True)
         self.drivetrain_back_left_module = OctoModule(15, 6, 9)
         self.drivetrain_back_right_module = OctoModule(17, 0, 15, isInverted=True)
-        self.drivetrain_differential_kinematics = DifferentialDriveKinematics(0)
+        self.drivetrain_differential_kinematics = DifferentialDriveKinematics(0.56)
         self.drivetrain_mecanum_kinematics = MecanumDriveKinematics(
-            Translation2d(0, 0),
-            Translation2d(0, 0),
-            Translation2d(0, 0),
-            Translation2d(0, 0),
+            Translation2d(0.32, 0.28),
+            Translation2d(0.32, -0.28),
+            Translation2d(-0.32, 0.28),
+            Translation2d(-0.32, -0.28),
         )
 
         self.xbox = wpilib.XboxController(0)
